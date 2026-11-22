@@ -1,7 +1,7 @@
 """结构化决策的跨样本概率指标聚合。"""
 
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import numpy as np
 
@@ -69,14 +69,21 @@ class DecisionAggregator(Aggregator):
                 add('ece', ece(calibration), bins=10, mode='binary' if kind == 'noul' else 'top_label')
                 class_maps = [r.class_labels or {label: label for label in r.labels} for r in rows]
                 if all(r.fixed_classes for r in rows) and len({tuple(sorted(m.values())) for m in class_maps}) == 1:
+                    gold_counts = Counter()
+                    predicted_counts = Counter()
+                    true_positives = Counter()
+                    for class_map, row in zip(class_maps, rows):
+                        gold = class_map[str(row.gold)]
+                        predicted = class_map[row.predicted]
+                        gold_counts[gold] += 1
+                        predicted_counts[predicted] += 1
+                        if predicted == gold:
+                            true_positives[gold] += 1
+
                     f1s = []
-                    predictions = [m[r.predicted] for m, r in zip(class_maps, rows)]
-                    golds = [m[str(r.gold)] for m, r in zip(class_maps, rows)]
                     for label in class_maps[0].values():
-                        tp = sum(p == g == label for p, g in zip(predictions, golds))
-                        fp = sum(p == label and g != label for p, g in zip(predictions, golds))
-                        fn = sum(p != label and g == label for p, g in zip(predictions, golds))
-                        f1s.append(2 * tp / (2 * tp + fp + fn) if 2 * tp + fp + fn else 0.0)
+                        denominator = gold_counts[label] + predicted_counts[label]
+                        f1s.append(2 * true_positives[label] / denominator if denominator else 0.0)
                     add('macro_f1', float(np.mean(f1s)))
             for basis in ['top_probability', 'provider_confidence']:
                 eligible = [r for r in rows if basis != 'provider_confidence' or r.confidence is not None]

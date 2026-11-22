@@ -171,6 +171,21 @@ def test_banking77_macro_f1_uses_intents_after_choice_shuffle() -> None:
     assert next(m.score for m in metrics if m.metric_name == 'macro_f1') == pytest.approx(2 / len(INTENT_LABELS))
 
 
+def test_macro_f1_includes_classes_with_no_true_positives() -> None:
+    labels = ['A', 'B', 'C', 'D', 'E']
+    observations = [('A', 'A'), ('A', 'A'), ('A', 'B'), ('B', 'B'), ('C', 'B'), ('A', 'D')]
+    scores = []
+    for index, (gold, predicted) in enumerate(observations):
+        probabilities = {label: float(label == predicted) for label in labels}
+        answer = DecisionAnswer(type='choice', choice=predicted, probabilities=probabilities)
+        score = decision_score(answer, gold, labels, fixed_classes=True)
+        scores.append(SampleScore(sample_id=index, score=score))
+
+    macro_f1 = next(m for m in DecisionAggregator()(scores) if m.metric_name == 'macro_f1')
+    # F1 is 2/3 for A, 1/2 for B, and zero for gold-only C, predicted-only D and absent E.
+    assert macro_f1.score == pytest.approx(7 / 30)
+
+
 @pytest.mark.parametrize('name', ['jevbench', 'open_decisions'])
 def test_repeated_official_tasks_keep_independent_predictions(name: str) -> None:
     adapter = get_benchmark(name, TaskConfig(model='test', eval_type='systemone_api', datasets=[name]))
